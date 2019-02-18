@@ -2,7 +2,8 @@
 #include "Wifi.h"
 #include "ArduinoJson.h"
 #include "esp_log.h"
-#include "SPI.h"
+#include <list>
+#include <map>
 
 // Replace with your network credentials
 //const char* ssid     = "BAEngineering";
@@ -10,30 +11,13 @@
 const char* ssid     = "TheJabronis";
 const char* password = "Breezytree6";
 
-// Assign output variables to GPIO pins
-//const int output23 = 23;
-const int output22 = 22;
-const int output21 = 21;
-
 AsyncWebServer server(80);
-
-struct Input {
-  bool i1;
-  bool i2;
-};
-
-struct ConfigRequest {
-  
-};
-
-// LEARN: when declaring a struct like this, you need to do new struct() to declare memory location otherwise it will fail when you try to 
-// access the variable.
-struct Input *input_p = new Input();
 
 enum SEQUENTIAL_ENUM {STATE0, STATE1, STATE2, STATE3};
 long interval = 200;
 uint8_t state = STATE0;
 
+/*
 void sequential() {
   // This means it is declared once otherwise it would be declared every time we run this function
   static long currentMillis = millis();
@@ -64,57 +48,105 @@ void sequential() {
     currentMillis = millis();
   }
 }
+*/
 
-void handleActionRequest(AsyncWebServerRequest *request) {
-  AsyncResponseStream *response = request->beginResponseStream("application/json");
-  
-  // Based off request do something...
-  if (input_p->i1 == true) {
-    input_p->i1 = false;
-  } else {
-    input_p->i1 = true;
-  }
+// This will need to get a lot more complicated if we want to add sequential stuff...
+// Also if we want to do AND OR logic on inputs
+struct ConfigRequest {
+	uint8_t input;
+	uint8_t output;
+	uint32_t brightness; // 0 (OFF) - 65,536 (FULL ON)
+};
 
-  DynamicJsonBuffer jsonBuffer;
-  JsonObject &root = jsonBuffer.createObject();
-  root["i1"] = input_p->i1;
-  root["ssid"] = WiFi.SSID();
-  root.printTo(*response);
-  request->send(response);
+struct InputConfig {
+  uint8_t input;
+};
+
+struct OutputConfig {
+  uint8_t output;
+  uint8_t brightness;
+};
+
+std::map<uint8_t, OutputConfig> stateOfWorld;
+
+uint8_t INPUT_1_PIN = 34;
+uint8_t INPUT_2_PIN = 35;
+uint8_t INPUT_3_PIN = 32;
+
+uint8_t LED_1_PIN = 23;
+uint8_t LED_2_PIN = 22;
+uint8_t LED_3_PIN = 18;
+
+uint8_t LED_1_PWM_CHAN = 0;
+uint8_t LED_2_PWM_CHAN = 1;
+uint8_t LED_3_PWM_CHAN = 2;
+
+const double PWM_FREQ = 5000;
+const uint8_t PWM_RES = 16;
+
+std::map<uint8_t, uint8_t> inputPinLookup = {
+	{1, INPUT_1_PIN},
+	{2, INPUT_2_PIN},
+	{3, INPUT_3_PIN}
+};
+
+std::map<uint8_t, uint8_t> ledPinLookup = {
+	{1, LED_1_PIN},
+	{2, LED_2_PIN},
+	{3, LED_3_PIN}
+};
+
+std::map<uint8_t, uint8_t> pwmChannelLookup = {
+	{1, LED_1_PWM_CHAN},
+	{2, LED_2_PWM_CHAN}, 
+	{3, LED_3_PWM_CHAN}
+};
+
+void setupLEDs() {
+  ledcSetup(LED_1_PWM_CHAN, PWM_FREQ, PWM_RES);
+  ledcSetup(LED_2_PWM_CHAN, PWM_FREQ, PWM_RES);
+  ledcSetup(LED_3_PWM_CHAN, PWM_FREQ, PWM_RES);
+  ledcAttachPin(LED_1_PIN, LED_1_PWM_CHAN);
+  ledcAttachPin(LED_2_PIN, LED_2_PWM_CHAN);
+  ledcAttachPin(LED_3_PIN, LED_3_PWM_CHAN);
 }
 
-void configChange(const char* input, const char* output) {
-  
+void setupInputs() {
+  pinMode(INPUT_1_PIN, INPUT);
+  pinMode(INPUT_2_PIN, INPUT);
+  pinMode(INPUT_3_PIN, INPUT);
+}
+
+void updateStateOfWorld(uint8_t input, OutputConfig outputConfig) {
+	stateOfWorld.insert(std::make_pair(input, outputConfig ));
+}
+
+void configChange(int input, int output, int brightness) {
+	OutputConfig outputConfig;
+	outputConfig.output = output;
+	outputConfig.brightness = brightness;
+
+	updateStateOfWorld(input, outputConfig);
 }
 
 bool handleBody(AsyncWebServerRequest *request, uint8_t *datas) {
 
   Serial.printf("[REQUEST]\t%s\r\n", (const char*)datas);
   
-  DynamicJsonBuffer jsonBuffer;
+  DynamicJsonBuffer jsonBuffer(1000);
   JsonObject& jsonObject = jsonBuffer.parseObject((const char*)datas); 
   if (!jsonObject.success()) return 0;
 
   if (jsonObject.containsKey("input")) {
-    Serial.println(jsonObject["input"].asString());
-    configChange(jsonObject["input"].as<char*>(), jsonObject["output"].as<char*>());
+    configChange(jsonObject["input"].as<int>(), jsonObject["output"].as<int>(), jsonObject["brightness"].as<int>());
     return 1;
-  };  
+  };
   return 0;
 }
 
 void setup(){
   esp_log_level_set("wifi", ESP_LOG_VERBOSE);      // enable WARN logs from WiFi stack
   Serial.begin(115200);
-
-  // Initialize the output variables as outputs
-  //pinMode(output23, OUTPUT);
-  pinMode(output22, OUTPUT);
-  pinMode(output21, OUTPUT);
-  // Set outputs to LOW
-  //digitalWrite(output23, LOW);
-  digitalWrite(output22, LOW);
-  digitalWrite(output21, LOW);
 
   WiFi.begin(ssid, password);
  
@@ -141,46 +173,31 @@ void setup(){
     }
   });
  
-  server.on("/action", HTTP_GET, [](AsyncWebServerRequest *request){
+  // Get StateOfWorld (Config)
+  server.on("/config", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(200, "text/plain", "Worked!");
   });
-
-  server.on("/action", HTTP_POST, handleActionRequest);
  
   server.begin();
+
+  setupInputs();
+  setupLEDs();
 }
 
-void checkInputs(struct Input *input) {
-  /*
-  if (IOPIN1) {
-    input0->i1 = true;
-  } else {
-    input->i1 = false;
-  }
-  if (IO_PIN2) {
-    input->i2 = true;
-  } else {
-    input->i2 = false;
-  }
-  */
-}
-
-void doOutputs() {
-  if (input_p->i1 == true) {
-    sequential();
-  } else {
-    //digitalWrite(output23, LOW);
-    digitalWrite(output22, LOW);
-    digitalWrite(output21, LOW);
-  }
+void checkInputs() {
+  // Loop through StateOfWorld and output if anything matches
+	for (std::map<uint8_t, OutputConfig>::iterator it = stateOfWorld.begin(); it != stateOfWorld.end(); ++it) {
+		uint8_t input = it->first;
+		OutputConfig outputConfig = it->second;
+		if (digitalRead(inputPinLookup[input])) {
+			ledcWrite(pwmChannelLookup[outputConfig.output], outputConfig.brightness);
+		}
+		else {
+			ledcWrite(pwmChannelLookup[outputConfig.output], 0);
+		}
+	}
 }
 
 void loop(){
-
-  // This is the guts of the program.  It is going to be difficult to make all of this changeable via an app
-  // This should use interrupts
-  //checkInputs();
-
-  // Use inputs to turn on signals
-  doOutputs();
+  checkInputs();
 }
