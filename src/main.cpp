@@ -1,5 +1,6 @@
+#include "Arduino.h"
 #include "ESPAsyncWebServer.h"
-#include "Wifi.h"
+#include "AsyncJson.h"
 #include "ArduinoJson.h"
 #include "esp_log.h"
 #include <list>
@@ -13,11 +14,12 @@ const char* password = "Breezytree6";
 
 AsyncWebServer server(80);
 
+/*
 enum SEQUENTIAL_ENUM {STATE0, STATE1, STATE2, STATE3};
 long interval = 200;
 uint8_t state = STATE0;
 
-/*
+
 void sequential() {
   // This means it is declared once otherwise it would be declared every time we run this function
   static long currentMillis = millis();
@@ -64,22 +66,22 @@ struct InputConfig {
 
 struct OutputConfig {
   uint8_t output;
-  uint8_t brightness;
+  uint32_t brightness;
 };
 
 std::map<uint8_t, OutputConfig> stateOfWorld;
 
-uint8_t INPUT_1_PIN = 34;
-uint8_t INPUT_2_PIN = 35;
-uint8_t INPUT_3_PIN = 32;
+const uint8_t INPUT_1_PIN = 34;
+const uint8_t INPUT_2_PIN = 35;
+const uint8_t INPUT_3_PIN = 32;
 
-uint8_t LED_1_PIN = 23;
-uint8_t LED_2_PIN = 22;
-uint8_t LED_3_PIN = 18;
+const uint8_t LED_1_PIN = 23;
+const uint8_t LED_2_PIN = 22;
+const uint8_t LED_3_PIN = 18;
 
-uint8_t LED_1_PWM_CHAN = 0;
-uint8_t LED_2_PWM_CHAN = 1;
-uint8_t LED_3_PWM_CHAN = 2;
+const uint8_t LED_1_PWM_CHAN = 0;
+const uint8_t LED_2_PWM_CHAN = 1;
+const uint8_t LED_3_PWM_CHAN = 2;
 
 const double PWM_FREQ = 5000;
 const uint8_t PWM_RES = 16;
@@ -118,10 +120,10 @@ void setupInputs() {
 }
 
 void updateStateOfWorld(uint8_t input, OutputConfig outputConfig) {
-	stateOfWorld.insert(std::make_pair(input, outputConfig ));
+	stateOfWorld[input] = outputConfig;
 }
 
-void configChange(int input, int output, int brightness) {
+void configChange(uint8_t input, uint8_t output, uint32_t brightness) {
 	OutputConfig outputConfig;
 	outputConfig.output = output;
 	outputConfig.brightness = brightness;
@@ -133,12 +135,12 @@ bool handleBody(AsyncWebServerRequest *request, uint8_t *datas) {
 
   Serial.printf("[REQUEST]\t%s\r\n", (const char*)datas);
   
-  DynamicJsonBuffer jsonBuffer(1000);
+  StaticJsonBuffer<200> jsonBuffer;
   JsonObject& jsonObject = jsonBuffer.parseObject((const char*)datas); 
   if (!jsonObject.success()) return 0;
 
   if (jsonObject.containsKey("input")) {
-    configChange(jsonObject["input"].as<int>(), jsonObject["output"].as<int>(), jsonObject["brightness"].as<int>());
+    //configChange(jsonObject["input"].as<uint8_t>(), jsonObject["output"].as<uint8_t>(), jsonObject["brightness"].as<uint32_t>());
     return 1;
   };
   return 0;
@@ -166,12 +168,17 @@ void setup(){
   Serial.println(WiFi.softAPIP());
   */
 
-  server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-    if (request->url() == "/config") {
-      if (!handleBody(request, data)) request->send(200, "text/plain", "false");
-      request->send(200, "text/plain", "true");
-    }
+  AsyncCallbackJsonWebHandler* handler = new AsyncCallbackJsonWebHandler("/config", [](AsyncWebServerRequest *request, JsonVariant &json) {
+    JsonObject& jsonObject = json.as<JsonObject>();
+
+    //if (jsonObj.containsKey("input")) {
+    configChange(jsonObject["input"].as<uint8_t>(), jsonObject["output"].as<uint8_t>(), jsonObject["brightness"].as<uint32_t>());
+    //request->send(200, "text/plain", "Gottem!");
+    //};
+    request->send(200, "application/json", "{\"status\": true}");
   });
+
+  server.addHandler(handler);
  
   // Get StateOfWorld (Config)
   server.on("/config", HTTP_GET, [](AsyncWebServerRequest *request){
