@@ -2,6 +2,7 @@
 #include "ESPAsyncWebServer.h"
 #include "AsyncJson.h"
 #include "ArduinoJson.h"
+#include "EEPROM.h"
 #include "esp_log.h"
 #include <list>
 #include <map>
@@ -114,13 +115,14 @@ void setupLEDs() {
 }
 
 void setupInputs() {
-  pinMode(INPUT_1_PIN, INPUT);
-  pinMode(INPUT_2_PIN, INPUT);
-  pinMode(INPUT_3_PIN, INPUT);
+  pinMode(INPUT_1_PIN, INPUT_PULLDOWN);
+  pinMode(INPUT_2_PIN, INPUT_PULLDOWN);
+  pinMode(INPUT_3_PIN, INPUT_PULLDOWN);
 }
 
 void updateStateOfWorld(uint8_t input, OutputConfig outputConfig) {
 	stateOfWorld[input] = outputConfig;
+  EEPROM.put(0, stateOfWorld);
 }
 
 void configChange(uint8_t input, uint8_t output, uint32_t brightness) {
@@ -147,6 +149,7 @@ bool handleBody(AsyncWebServerRequest *request, uint8_t *datas) {
 }
 
 void setup(){
+  EEPROM.get(0, stateOfWorld);
   esp_log_level_set("wifi", ESP_LOG_VERBOSE);      // enable WARN logs from WiFi stack
   Serial.begin(115200);
 
@@ -171,11 +174,12 @@ void setup(){
   AsyncCallbackJsonWebHandler* handler = new AsyncCallbackJsonWebHandler("/config", [](AsyncWebServerRequest *request, JsonVariant &json) {
     JsonObject& jsonObject = json.as<JsonObject>();
 
-    //if (jsonObj.containsKey("input")) {
-    configChange(jsonObject["input"].as<uint8_t>(), jsonObject["output"].as<uint8_t>(), jsonObject["brightness"].as<uint32_t>());
-    //request->send(200, "text/plain", "Gottem!");
-    //};
-    request->send(200, "application/json", "{\"status\": true}");
+    const uint8_t input = jsonObject["input"];
+    if (input) {
+      configChange(input, jsonObject["output"].as<uint8_t>(), jsonObject["brightness"].as<uint32_t>());
+      request->send(200, "application/json", "{\"status\": true}");
+    }
+    request->send(200, "application/json", "{\"status\": false}");
   });
 
   server.addHandler(handler);
