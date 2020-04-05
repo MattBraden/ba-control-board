@@ -79,3 +79,42 @@ void LEDStateMachine::disable() {
 	m_current_state_index = 0;
 	disabled = true;
 }
+
+// TRASH: Config should not also keep statemachine states....
+// Who coded this...
+map<int, LEDOutput> LEDHelper::determineOutput(map<int, LEDStateMachine>& fullConfig, map<int, bool> inputs) {
+  // Set all outputs to off
+  map<int, LEDOutput> outputs;
+  for(int i = 0; i < NUMBER_OF_OUTPUTS; ++i) {
+    outputs.insert({i, LEDOutput{0, 0, 0}});
+  }
+
+  // Figure out what statemachines are active
+  vector<LEDStateMachine*> activeStateMachines;
+  for (auto &x: fullConfig) {
+    int input = x.first;
+    LEDStateMachine &stateMachine = fullConfig.find(input)->second;
+
+    if (inputs[input]) {
+      stateMachine.check();
+      activeStateMachines.push_back(&stateMachine);
+    } else {
+      stateMachine.disable();
+    }
+  }
+
+  // Of the active stateMachine, set outputs based on priority
+  // This code is slowly turning into a gigantic mess.
+  for (auto stateMachine: activeStateMachines) {
+    LEDState state = stateMachine->getCurrentState();
+    for (int output : state.getOutput()) {
+      if (stateMachine->getPriority() > outputs[output].priority) {
+        if (outputs[output].stateMachine != 0) {
+          outputs[output].stateMachine->disable();
+        }
+        outputs[output] = LEDOutput{state.getBrightness(), stateMachine->getPriority(), stateMachine};
+      }
+    }
+  }
+  return outputs;
+}
