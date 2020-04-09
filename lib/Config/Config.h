@@ -19,6 +19,7 @@ namespace config {
 
     class ConfigHelper {
         public: 
+            static int convertBrightness(int oldValue);
             static void saveConfig(std::map<int, LEDStateMachine>& fullConfig);
             static void configChange(std::map<int, LEDStateMachine>& fullConfig, LEDConfig& config);
             static void loadFullConfig(std::map<int, LEDStateMachine>& fullConfig);

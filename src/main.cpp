@@ -43,6 +43,7 @@ void setupInputs() {
 }
 
 void setupWifi() {
+  /*
   IPAddress local_ip(69, 69, 69, 69);
   IPAddress gateway(69, 69, 69, 69);
   IPAddress subnet(255, 255, 255, 0);
@@ -51,16 +52,18 @@ void setupWifi() {
   WiFi.softAP(ssid, password);
   Serial.print("AP IP address: ");
   Serial.println(WiFi.softAPIP());
+  */
 
-  //WiFi.begin("2Guys1Flat", "caliboy20");
+  WiFi.begin("2Guys1Flat", "caliboy20");
 }
 
 void setupHttpServer() {
   AsyncCallbackJsonWebHandler* handler = new AsyncCallbackJsonWebHandler("/config", [](AsyncWebServerRequest *request, JsonVariant &json) {
     g_fullConfig_mutex.lock();
-    JsonObject& jsonObj = json.as<JsonObject>();
-    LEDConfig config = ConfigHelper::convertJsonToConfig(jsonObj);
-    ConfigHelper::configChange(g_fullConfig, config);
+    for (JsonObject& configArrayJson : json.as<JsonArray>()) {
+      LEDConfig config = ConfigHelper::convertJsonToConfig(configArrayJson);
+      ConfigHelper::configChange(g_fullConfig, config);
+    }
     request->send(200, "application/json", "{\"success\": true}");
     g_fullConfig_mutex.unlock();
   });

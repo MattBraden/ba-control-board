@@ -5,6 +5,16 @@ using namespace led;
 
 Preferences prefs;
 
+int ConfigHelper::convertBrightness(int oldValue) {
+  static int oldMax = 100;
+  static int oldMin = 0;
+  static int newMax = 65535;
+  static int newMin = 0;
+  int oldRange = (oldMax - oldMin);
+  int newRange = (newMax - newMin);
+  return (((oldValue - oldMin) * newRange) / oldRange) + newMin;
+}
+
 void ConfigHelper::saveConfig(std::map<int, LEDStateMachine>& fullConfig) {
   String configString = convertConfigToJson(fullConfig);
   prefs.begin("config");
@@ -80,18 +90,18 @@ String ConfigHelper::convertConfigToJson(std::map<int, LEDStateMachine>& fullCon
   return output;
 }
 
-LEDConfig ConfigHelper::convertJsonToConfig(JsonObject& root) {
-  int input = root["i"];
+LEDConfig ConfigHelper::convertJsonToConfig(JsonObject& config) {
+  int input = config["i"];
 
   vector<LEDState> ledStates = {};
-  for (JsonObject& jsonState : root["s"].as<JsonArray>()) {
+  for (JsonObject& jsonState : config["s"].as<JsonArray>()) {
     vector<int> outputs = {};
     for (JsonVariant& output : jsonState["o"].as<JsonArray>()) {
       outputs.push_back(output.as<int>());
     }
-    LEDState state(outputs, jsonState["t"].as<int>(), jsonState["b"].as<int>());
+    LEDState state(outputs, jsonState["t"].as<int>(), convertBrightness(jsonState["b"].as<int>()));
     ledStates.push_back(state);
   }
-  LEDStateMachine stateMachine(ledStates, root["p"]);
+  LEDStateMachine stateMachine(ledStates, config["p"]);
   return LEDConfig {input, stateMachine};
 }
